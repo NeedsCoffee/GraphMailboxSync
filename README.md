@@ -31,10 +31,9 @@ This script uses the Microsoft Graph mailbox import/export preview APIs instead 
 
 At minimum, the app registration should have:
 
-- `MailboxFolder.Read.All`
 - `MailboxFolder.ReadWrite.All`
-- `MailboxItem.Export.All`
 - `MailboxItem.ImportExport.All`
+- `User.Read.All`
 
 If your tenant uses Exchange application RBAC or application access policies, the app also needs to be allowed to the specific source and target mailboxes you want to touch.
 
@@ -65,13 +64,13 @@ Supported `.env` keys include:
 - `FORCE`
 - `EXPORT_BATCH_SIZE`
 
-Boolean values accept `true`/`false`, `yes`/`no`, `1`/`0`, and similar forms. Multi-value include or exclude paths should be separated with `;`.
+Boolean values accept `true`/`false`, `yes`/`no`, `1`/`0`, and similar forms. Multi-value include or exclude paths should be separated with `;`. If `SOURCE_FOLDER_PATH` is omitted, the script defaults the source root to `\`.
 
 ## Command-line parameters
 
 - `-SourceUserPrincipalName <string>`: Required unless provided in `.env`. Source mailbox user principal name.
 - `-TargetUserPrincipalName <string>`: Required unless provided in `.env`. Target mailbox user principal name.
-- `-SourceFolderPath <string>`: Required unless provided in `.env`. Source mailbox folder path to copy.
+- `-SourceFolderPath <string>`: Optional. Source mailbox folder path to copy. Defaults to `\`.
 - `-TargetFolderPath <string>`: Optional. Target mailbox folder path. Defaults to an empty string.
 - `-TenantId <string>`: Required unless provided in `.env`. Microsoft Entra tenant ID.
 - `-ClientId <string>`: Required unless provided in `.env`. App registration client ID.

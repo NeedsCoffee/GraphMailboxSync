@@ -196,7 +196,7 @@ function Set-ValueFromDotEnv {
         [string[]]$DotEnvKeys,
 
         [Parameter(Mandatory = $true)]
-        [scriptblock]$Assignment
+        [scriptblock]$Transform
     )
 
     if ($script:CommandLineParameterNames -contains $ParameterName) {
@@ -208,7 +208,8 @@ function Set-ValueFromDotEnv {
         return
     }
 
-    & $Assignment $resolvedSetting.Value $resolvedSetting.Key
+    $resolvedValue = & $Transform $resolvedSetting.Value $resolvedSetting.Key
+    $ExecutionContext.SessionState.PSVariable.Set("script:$ParameterName", $resolvedValue)
     Set-SettingSource -Map $settingSources -Name $ParameterName -Source ".env ($($resolvedSetting.Key))"
 }
 
@@ -230,94 +231,94 @@ foreach ($boundParameterName in $PSBoundParameters.Keys) {
     Set-SettingSource -Map $settingSources -Name $boundParameterName -Source 'command line'
 }
 
-Set-ValueFromDotEnv -ParameterName 'SourceUserPrincipalName' -DotEnvKeys @('SOURCE_USER_PRINCIPAL_NAME') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'SourceUserPrincipalName' -DotEnvKeys @('SOURCE_USER_PRINCIPAL_NAME') -Transform {
     param($value, $key)
-    $SourceUserPrincipalName = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'TargetUserPrincipalName' -DotEnvKeys @('TARGET_USER_PRINCIPAL_NAME') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'TargetUserPrincipalName' -DotEnvKeys @('TARGET_USER_PRINCIPAL_NAME') -Transform {
     param($value, $key)
-    $TargetUserPrincipalName = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'SourceFolderPath' -DotEnvKeys @('SOURCE_FOLDER_PATH') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'SourceFolderPath' -DotEnvKeys @('SOURCE_FOLDER_PATH') -Transform {
     param($value, $key)
-    $SourceFolderPath = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'TargetFolderPath' -DotEnvKeys @('TARGET_FOLDER_PATH') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'TargetFolderPath' -DotEnvKeys @('TARGET_FOLDER_PATH') -Transform {
     param($value, $key)
-    $TargetFolderPath = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'TenantId' -DotEnvKeys @('TENANT_ID') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'TenantId' -DotEnvKeys @('TENANT_ID') -Transform {
     param($value, $key)
-    $TenantId = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'ClientId' -DotEnvKeys @('CLIENT_ID') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'ClientId' -DotEnvKeys @('CLIENT_ID') -Transform {
     param($value, $key)
-    $ClientId = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'CertificateThumbprint' -DotEnvKeys @('CERTIFICATE_THUMBPRINT') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'CertificateThumbprint' -DotEnvKeys @('CERTIFICATE_THUMBPRINT') -Transform {
     param($value, $key)
-    $CertificateThumbprint = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'ImportDirectlyIntoTargetFolder' -DotEnvKeys @('IMPORT_DIRECTLY_INTO_TARGET_FOLDER') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'ImportDirectlyIntoTargetFolder' -DotEnvKeys @('IMPORT_DIRECTLY_INTO_TARGET_FOLDER') -Transform {
     param($value, $key)
-    $ImportDirectlyIntoTargetFolder = ConvertTo-DotEnvBoolean -Value $value -Key $key
+    ConvertTo-DotEnvBoolean -Value $value -Key $key
 }
 
-Set-ValueFromDotEnv -ParameterName 'OverlayMode' -DotEnvKeys @('OVERLAY_MODE') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'OverlayMode' -DotEnvKeys @('OVERLAY_MODE') -Transform {
     param($value, $key)
-    $OverlayMode = ConvertTo-DotEnvBoolean -Value $value -Key $key
+    ConvertTo-DotEnvBoolean -Value $value -Key $key
 }
 
-Set-ValueFromDotEnv -ParameterName 'CopyEmptyFolders' -DotEnvKeys @('COPY_EMPTY_FOLDERS') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'CopyEmptyFolders' -DotEnvKeys @('COPY_EMPTY_FOLDERS') -Transform {
     param($value, $key)
-    $CopyEmptyFolders = ConvertTo-DotEnvBoolean -Value $value -Key $key
+    ConvertTo-DotEnvBoolean -Value $value -Key $key
 }
 
-Set-ValueFromDotEnv -ParameterName 'IncludeFolderPath' -DotEnvKeys @('INCLUDE_FOLDER_PATH') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'IncludeFolderPath' -DotEnvKeys @('INCLUDE_FOLDER_PATH') -Transform {
     param($value, $key)
-    $IncludeFolderPath = ConvertTo-DotEnvArray -Value $value
+    ConvertTo-DotEnvArray -Value $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'ExcludeFolderPath' -DotEnvKeys @('EXCLUDE_FOLDER_PATH') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'ExcludeFolderPath' -DotEnvKeys @('EXCLUDE_FOLDER_PATH') -Transform {
     param($value, $key)
-    $ExcludeFolderPath = ConvertTo-DotEnvArray -Value $value
+    ConvertTo-DotEnvArray -Value $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'Oldest' -DotEnvKeys @('OLDEST') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'Oldest' -DotEnvKeys @('OLDEST') -Transform {
     param($value, $key)
-    $Oldest = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'Newest' -DotEnvKeys @('NEWEST') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'Newest' -DotEnvKeys @('NEWEST') -Transform {
     param($value, $key)
-    $Newest = $value
+    $value
 }
 
-Set-ValueFromDotEnv -ParameterName 'PreflightOnly' -DotEnvKeys @('PREFLIGHT_ONLY') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'PreflightOnly' -DotEnvKeys @('PREFLIGHT_ONLY') -Transform {
     param($value, $key)
-    $PreflightOnly = ConvertTo-DotEnvBoolean -Value $value -Key $key
+    ConvertTo-DotEnvBoolean -Value $value -Key $key
 }
 
-Set-ValueFromDotEnv -ParameterName 'Force' -DotEnvKeys @('FORCE') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'Force' -DotEnvKeys @('FORCE') -Transform {
     param($value, $key)
-    $Force = ConvertTo-DotEnvBoolean -Value $value -Key $key
+    ConvertTo-DotEnvBoolean -Value $value -Key $key
 }
 
-Set-ValueFromDotEnv -ParameterName 'ExportBatchSize' -DotEnvKeys @('EXPORT_BATCH_SIZE') -Assignment {
+Set-ValueFromDotEnv -ParameterName 'ExportBatchSize' -DotEnvKeys @('EXPORT_BATCH_SIZE') -Transform {
     param($value, $key)
     $parsedExportBatchSize = 0
     if (-not [int]::TryParse($value, [ref]$parsedExportBatchSize)) {
         throw "Unable to parse integer value '$value' for $key in the .env configuration."
     }
 
-    $ExportBatchSize = $parsedExportBatchSize
+    $parsedExportBatchSize
 }
 
 if ([string]::IsNullOrWhiteSpace($SourceUserPrincipalName)) {
@@ -329,7 +330,8 @@ if ([string]::IsNullOrWhiteSpace($TargetUserPrincipalName)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($SourceFolderPath)) {
-    throw 'SourceFolderPath must be provided either on the command line or in the .env configuration.'
+    $SourceFolderPath = '\'
+    Set-SettingSource -Map $settingSources -Name 'SourceFolderPath' -Source 'defaulted to mailbox root'
 }
 
 if ([string]::IsNullOrWhiteSpace($TenantId)) {
@@ -591,8 +593,30 @@ function Confirm-PlannedOperation {
         return
     }
 
+    if ($PreflightOnly) {
+        Write-Verbose 'Skipping confirmation because PreflightOnly was specified.'
+        return
+    }
+
+    if ($WhatIfMode) {
+        Write-Verbose 'Skipping confirmation because WhatIf was specified.'
+        return
+    }
+
     $caption = 'Confirm mailbox copy'
     $message = 'Proceed with this mailbox operation?'
+    $hostUi = $null
+    try {
+        $hostUi = $Host.UI
+    }
+    catch {
+        $hostUi = $null
+    }
+
+    if ($null -eq $hostUi) {
+        throw 'Confirmation is not available in this host. Re-run with -Force to continue without a prompt.'
+    }
+
     if (-not $PSCmdlet.ShouldContinue($message, $caption)) {
         throw 'Operation cancelled by user.'
     }
@@ -982,6 +1006,7 @@ function Get-RelativeFolderPath {
 function Test-FolderPathMatch {
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$FolderRelativePath,
 
         [Parameter(Mandatory = $true)]
@@ -1767,6 +1792,15 @@ function Copy-MailboxFolderItems {
         $sourceRootFolderType = if ([string]::IsNullOrWhiteSpace($SourceRootFolder.type)) { 'IPF.Note' } else { [string]$SourceRootFolder.type }
         $rootDisplayName = if ([string]::IsNullOrWhiteSpace($RootTargetDisplayNameOverride)) { $SourceRootFolder.displayName } else { $RootTargetDisplayNameOverride }
         Ensure-MailboxFolder -AccessToken $AccessToken -MailboxId $TargetMailboxId -ParentFolder $TargetParentFolder -DisplayName $rootDisplayName -FolderType $sourceRootFolderType
+    }
+
+    if ($null -eq $rootTargetFolder -and $WhatIfPreference -and -not ($OverlayMode -and $SourceRootFolder.id -eq '$root')) {
+        $resolvedRootDisplayName = if ([string]::IsNullOrWhiteSpace($RootTargetDisplayNameOverride)) { $SourceRootFolder.displayName } else { $RootTargetDisplayNameOverride }
+        $rootTargetFolder = [pscustomobject]@{
+            id          = '$whatif'
+            displayName = $resolvedRootDisplayName
+            type        = if ([string]::IsNullOrWhiteSpace($SourceRootFolder.type)) { 'IPF.Note' } else { [string]$SourceRootFolder.type }
+        }
     }
 
     if ($null -eq $rootTargetFolder -and -not ($OverlayMode -and $SourceRootFolder.id -eq '$root')) {
