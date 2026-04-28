@@ -8,6 +8,18 @@ param(
 
     [string]$TargetFolderPath = '',
 
+    [string]$SourceTenantId,
+
+    [string]$SourceClientId,
+
+    [string]$SourceCertificateThumbprint,
+
+    [string]$TargetTenantId,
+
+    [string]$TargetClientId,
+
+    [string]$TargetCertificateThumbprint,
+
     [string]$TenantId,
 
     [string]$ClientId,
@@ -213,6 +225,37 @@ function Set-ValueFromDotEnv {
     Set-SettingSource -Map $settingSources -Name $ParameterName -Source ".env ($($resolvedSetting.Key))"
 }
 
+function Resolve-AuthenticationSetting {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrimaryParameterName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FallbackParameterName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FriendlyName
+    )
+
+    $primaryValue = Get-Variable -Name $PrimaryParameterName -Scope Script -ValueOnly
+    if (-not [string]::IsNullOrWhiteSpace($primaryValue)) {
+        return [pscustomobject]@{
+            Value  = $primaryValue
+            Source = Get-SettingSourceLabel -Map $settingSources -Name $PrimaryParameterName
+        }
+    }
+
+    $fallbackValue = Get-Variable -Name $FallbackParameterName -Scope Script -ValueOnly
+    if (-not [string]::IsNullOrWhiteSpace($fallbackValue)) {
+        return [pscustomobject]@{
+            Value  = $fallbackValue
+            Source = "$FallbackParameterName fallback [$((Get-SettingSourceLabel -Map $settingSources -Name $FallbackParameterName))]"
+        }
+    }
+
+    throw "$FriendlyName must be provided either via $PrimaryParameterName or via the legacy $FallbackParameterName setting."
+}
+
 $dotEnvValues = @{}
 $settingSources = @{}
 $script:CommandLineParameterNames = @($PSBoundParameters.Keys)
@@ -247,6 +290,36 @@ Set-ValueFromDotEnv -ParameterName 'SourceFolderPath' -DotEnvKeys @('SOURCE_FOLD
 }
 
 Set-ValueFromDotEnv -ParameterName 'TargetFolderPath' -DotEnvKeys @('TARGET_FOLDER_PATH') -Transform {
+    param($value, $key)
+    $value
+}
+
+Set-ValueFromDotEnv -ParameterName 'SourceTenantId' -DotEnvKeys @('SOURCE_TENANT_ID') -Transform {
+    param($value, $key)
+    $value
+}
+
+Set-ValueFromDotEnv -ParameterName 'SourceClientId' -DotEnvKeys @('SOURCE_CLIENT_ID') -Transform {
+    param($value, $key)
+    $value
+}
+
+Set-ValueFromDotEnv -ParameterName 'SourceCertificateThumbprint' -DotEnvKeys @('SOURCE_CERTIFICATE_THUMBPRINT') -Transform {
+    param($value, $key)
+    $value
+}
+
+Set-ValueFromDotEnv -ParameterName 'TargetTenantId' -DotEnvKeys @('TARGET_TENANT_ID') -Transform {
+    param($value, $key)
+    $value
+}
+
+Set-ValueFromDotEnv -ParameterName 'TargetClientId' -DotEnvKeys @('TARGET_CLIENT_ID') -Transform {
+    param($value, $key)
+    $value
+}
+
+Set-ValueFromDotEnv -ParameterName 'TargetCertificateThumbprint' -DotEnvKeys @('TARGET_CERTIFICATE_THUMBPRINT') -Transform {
     param($value, $key)
     $value
 }
@@ -334,16 +407,16 @@ if ([string]::IsNullOrWhiteSpace($SourceFolderPath)) {
     Set-SettingSource -Map $settingSources -Name 'SourceFolderPath' -Source 'defaulted to mailbox root'
 }
 
-if ([string]::IsNullOrWhiteSpace($TenantId)) {
-    throw 'TenantId must be provided either on the command line or in the .env configuration.'
+$sourceAuthenticationSettings = @{
+    Tenant      = Resolve-AuthenticationSetting -PrimaryParameterName 'SourceTenantId' -FallbackParameterName 'TenantId' -FriendlyName 'Source tenant ID'
+    Client      = Resolve-AuthenticationSetting -PrimaryParameterName 'SourceClientId' -FallbackParameterName 'ClientId' -FriendlyName 'Source client ID'
+    Certificate = Resolve-AuthenticationSetting -PrimaryParameterName 'SourceCertificateThumbprint' -FallbackParameterName 'CertificateThumbprint' -FriendlyName 'Source certificate thumbprint'
 }
 
-if ([string]::IsNullOrWhiteSpace($ClientId)) {
-    throw 'ClientId must be provided either on the command line or in the .env configuration.'
-}
-
-if ([string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
-    throw 'CertificateThumbprint must be provided either on the command line or in the .env configuration.'
+$targetAuthenticationSettings = @{
+    Tenant      = Resolve-AuthenticationSetting -PrimaryParameterName 'TargetTenantId' -FallbackParameterName 'TenantId' -FriendlyName 'Target tenant ID'
+    Client      = Resolve-AuthenticationSetting -PrimaryParameterName 'TargetClientId' -FallbackParameterName 'ClientId' -FriendlyName 'Target client ID'
+    Certificate = Resolve-AuthenticationSetting -PrimaryParameterName 'TargetCertificateThumbprint' -FallbackParameterName 'CertificateThumbprint' -FriendlyName 'Target certificate thumbprint'
 }
 
 if ($ExportBatchSize -lt 1 -or $ExportBatchSize -gt 20) {
@@ -486,6 +559,12 @@ function Confirm-PlannedOperation {
         [string]$ResolvedTargetDescription,
 
         [Parameter(Mandatory = $true)]
+        [hashtable]$SourceAuthenticationSettings,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$TargetAuthenticationSettings,
+
+        [Parameter(Mandatory = $true)]
         [string]$Mode,
 
         [Parameter(Mandatory = $true)]
@@ -551,6 +630,12 @@ function Confirm-PlannedOperation {
     Write-Host ("  Target mailbox : {0} [{1}]" -f $TargetUserPrincipalName, $targetMailboxSource)
     Write-Host ("  Source path    : {0} [{1}]" -f $SourceFolderPath, $sourcePathSource)
     Write-Host ("  Target         : {0} [{1}]" -f $ResolvedTargetDescription, $targetPathSource)
+    Write-Host ("  Source tenant  : {0} [{1}]" -f $SourceAuthenticationSettings.Tenant.Value, $SourceAuthenticationSettings.Tenant.Source)
+    Write-Host ("  Source client  : {0} [{1}]" -f $SourceAuthenticationSettings.Client.Value, $SourceAuthenticationSettings.Client.Source)
+    Write-Host ("  Source cert    : {0} [{1}]" -f $SourceAuthenticationSettings.Certificate.Value, $SourceAuthenticationSettings.Certificate.Source)
+    Write-Host ("  Target tenant  : {0} [{1}]" -f $TargetAuthenticationSettings.Tenant.Value, $TargetAuthenticationSettings.Tenant.Source)
+    Write-Host ("  Target client  : {0} [{1}]" -f $TargetAuthenticationSettings.Client.Value, $TargetAuthenticationSettings.Client.Source)
+    Write-Host ("  Target cert    : {0} [{1}]" -f $TargetAuthenticationSettings.Certificate.Value, $TargetAuthenticationSettings.Certificate.Source)
     Write-Host ("  Mode           : {0} [{1}]" -f $Mode, $modeSource)
     Write-Host ("  Copy empty     : {0} [{1}]" -f ($(if ($CopyEmptyFolders) { 'Yes' } else { 'No' })), $copyEmptySource)
     Write-Host ("  Est. folders   : {0} selected, {1} traversed" -f $EstimatedSelectedFolderCount, $EstimatedTraversedFolderCount)
@@ -1709,7 +1794,10 @@ function Import-MailboxItem {
 function Copy-MailboxFolderItems {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [string]$SourceAccessToken,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TargetAccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$SourceMailboxId,
@@ -1791,7 +1879,7 @@ function Copy-MailboxFolderItems {
     else {
         $sourceRootFolderType = if ([string]::IsNullOrWhiteSpace($SourceRootFolder.type)) { 'IPF.Note' } else { [string]$SourceRootFolder.type }
         $rootDisplayName = if ([string]::IsNullOrWhiteSpace($RootTargetDisplayNameOverride)) { $SourceRootFolder.displayName } else { $RootTargetDisplayNameOverride }
-        Ensure-MailboxFolder -AccessToken $AccessToken -MailboxId $TargetMailboxId -ParentFolder $TargetParentFolder -DisplayName $rootDisplayName -FolderType $sourceRootFolderType
+        Ensure-MailboxFolder -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ParentFolder $TargetParentFolder -DisplayName $rootDisplayName -FolderType $sourceRootFolderType
     }
 
     if ($null -eq $rootTargetFolder -and $WhatIfPreference -and -not ($OverlayMode -and $SourceRootFolder.id -eq '$root')) {
@@ -1832,7 +1920,7 @@ function Copy-MailboxFolderItems {
         }
         else {
             Write-Verbose "Enumerating items in source folder '$($sourceFolder.displayName)' ($($sourceFolder.id))."
-            $items = @(Get-MailboxItems -AccessToken $AccessToken -MailboxId $SourceMailboxId -FolderId $sourceFolder.id -DateFilter $DateFilter)
+            $items = @(Get-MailboxItems -AccessToken $SourceAccessToken -MailboxId $SourceMailboxId -FolderId $sourceFolder.id -DateFilter $DateFilter)
         }
 
         $itemCount = @($items).Count
@@ -1860,7 +1948,7 @@ function Copy-MailboxFolderItems {
                 $parentSourceFolderId = if ($sourceFolder.parentFolderId) { $sourceFolder.parentFolderId } else { '$root' }
                 $targetParentForCurrent = if ($folderMap.ContainsKey($parentSourceFolderId)) { $folderMap[$parentSourceFolderId] } else { $rootTargetFolder }
                 $currentFolderType = if ([string]::IsNullOrWhiteSpace($sourceFolder.type)) { 'IPF.Note' } else { [string]$sourceFolder.type }
-                $targetFolder = Ensure-MailboxFolder -AccessToken $AccessToken -MailboxId $TargetMailboxId -ParentFolder $targetParentForCurrent -DisplayName $sourceFolder.displayName -FolderType $currentFolderType
+                $targetFolder = Ensure-MailboxFolder -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ParentFolder $targetParentForCurrent -DisplayName $sourceFolder.displayName -FolderType $currentFolderType
                 $folderMap[$sourceFolder.id] = $targetFolder
             }
         }
@@ -1883,8 +1971,8 @@ function Copy-MailboxFolderItems {
             }
 
             if ($PSCmdlet.ShouldProcess("$($TargetMailboxId):$($targetFolder.displayName)", "Import $($itemIds.Count) item(s) from '$($SourceMailboxId):$($sourceFolder.displayName)'")) {
-                $exportedItems = Export-MailboxItems -AccessToken $AccessToken -MailboxId $SourceMailboxId -ItemIds $itemIds
-                $importSession = Get-ImportSession -AccessToken $AccessToken -MailboxId $TargetMailboxId -ExistingSession $importSession
+                $exportedItems = Export-MailboxItems -AccessToken $SourceAccessToken -MailboxId $SourceMailboxId -ItemIds $itemIds
+                $importSession = Get-ImportSession -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ExistingSession $importSession
 
                 foreach ($exportedItem in $exportedItems) {
                     $errorProperty = $exportedItem.PSObject.Properties['error']
@@ -1922,19 +2010,27 @@ function Copy-MailboxFolderItems {
     Write-Host ("Finished. Processed {0} folder(s) and imported {1} item(s)." -f $processedFolderCount, $copiedItemCount)
 }
 
-$accessToken = Get-GraphAccessToken -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint
+$sourceAccessToken = Get-GraphAccessToken `
+    -TenantId $sourceAuthenticationSettings.Tenant.Value `
+    -ClientId $sourceAuthenticationSettings.Client.Value `
+    -CertificateThumbprint $sourceAuthenticationSettings.Certificate.Value
+
+$targetAccessToken = Get-GraphAccessToken `
+    -TenantId $targetAuthenticationSettings.Tenant.Value `
+    -ClientId $targetAuthenticationSettings.Client.Value `
+    -CertificateThumbprint $targetAuthenticationSettings.Certificate.Value
 
 Write-Verbose "Resolving source mailbox ID for '$SourceUserPrincipalName'."
-$sourceMailboxId = Resolve-MailboxId -AccessToken $accessToken -UserPrincipalName $SourceUserPrincipalName
+$sourceMailboxId = Resolve-MailboxId -AccessToken $sourceAccessToken -UserPrincipalName $SourceUserPrincipalName
 
 Write-Verbose "Resolving target mailbox ID for '$TargetUserPrincipalName'."
-$targetMailboxId = Resolve-MailboxId -AccessToken $accessToken -UserPrincipalName $TargetUserPrincipalName
+$targetMailboxId = Resolve-MailboxId -AccessToken $targetAccessToken -UserPrincipalName $TargetUserPrincipalName
 
 Write-Verbose "Loading source mailbox folder tree."
-$sourceFolderTree = Get-MailboxFolderTree -AccessToken $accessToken -MailboxId $sourceMailboxId
+$sourceFolderTree = Get-MailboxFolderTree -AccessToken $sourceAccessToken -MailboxId $sourceMailboxId
 
 Write-Verbose "Loading target mailbox folder tree."
-$targetFolderTree = Get-MailboxFolderTree -AccessToken $accessToken -MailboxId $targetMailboxId
+$targetFolderTree = Get-MailboxFolderTree -AccessToken $targetAccessToken -MailboxId $targetMailboxId
 
 $sourceRootFolder = Resolve-MailboxFolderPath -FolderTree $sourceFolderTree -Path $SourceFolderPath
 
@@ -2008,7 +2104,7 @@ else {
             -ParentFolder $null `
             -Path $TargetFolderPath `
             -ContextDescription "the requested target folder path '$TargetFolderPath'"
-        Ensure-MailboxFolderPath -AccessToken $accessToken -MailboxId $targetMailboxId -Path $TargetFolderPath -CreateIfMissing:$false
+        Ensure-MailboxFolderPath -AccessToken $targetAccessToken -MailboxId $targetMailboxId -Path $TargetFolderPath -CreateIfMissing:$false
     }
 }
 
@@ -2047,6 +2143,8 @@ Confirm-PlannedOperation `
     -TargetUserPrincipalName $TargetUserPrincipalName `
     -SourceFolderPath $SourceFolderPath `
     -ResolvedTargetDescription $resolvedTargetDescription `
+    -SourceAuthenticationSettings $sourceAuthenticationSettings `
+    -TargetAuthenticationSettings $targetAuthenticationSettings `
     -Mode (Get-ExecutionModeSummary -OverlayMode:$OverlayMode -ImportDirectlyIntoTargetFolder:$ImportDirectlyIntoTargetFolder -PreflightOnly:$PreflightOnly) `
     -OverlayMode:$OverlayMode `
     -ImportDirectlyIntoTargetFolder:$ImportDirectlyIntoTargetFolder `
@@ -2078,7 +2176,8 @@ if ($PreflightOnly) {
 }
 
 Copy-MailboxFolderItems `
-    -AccessToken $accessToken `
+    -SourceAccessToken $sourceAccessToken `
+    -TargetAccessToken $targetAccessToken `
     -SourceMailboxId $sourceMailboxId `
     -TargetMailboxId $targetMailboxId `
     -SourceFolderTree $sourceFolderTree `

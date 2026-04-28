@@ -2,11 +2,16 @@
 
 `Copy-GraphMailboxItems.ps1` copies a mailbox folder subtree from one Exchange Online mailbox to another by using Microsoft Graph application authentication with a certificate from `Cert:\CurrentUser\My`.
 
-The script can also load default values from a local `.env` file. Command-line parameters always win over `.env` values. `TenantId`, `ClientId`, and `CertificateThumbprint` must be provided on the command line or in `.env`.
+The script now supports both same-tenant and cross-tenant copies. You can keep using the legacy single-tenant auth settings, or provide separate source and target tenant/app/certificate settings for tenant-to-tenant copies.
+
+The script can also load default values from a local `.env` file. Command-line parameters always win over `.env` values. For same-tenant runs, the legacy `TenantId`, `ClientId`, and `CertificateThumbprint` settings are still enough. For cross-tenant runs, use the source and target auth settings instead.
+
+See [SETUP.md](./SETUP.md) for the tenant, application, certificate, and permission prerequisites needed before you run the script.
 
 ## What it does
 
 - Authenticates as an application with a certificate thumbprint.
+- Supports separate source-side and target-side Graph authentication contexts.
 - Resolves each user's Exchange mailbox ID through Graph.
 - Walks the source folder tree recursively.
 - Creates matching folders in the target mailbox only when needed for copied content by default.
@@ -37,6 +42,8 @@ At minimum, the app registration should have:
 
 If your tenant uses Exchange application RBAC or application access policies, the app also needs to be allowed to the specific source and target mailboxes you want to touch.
 
+For cross-tenant copies, make sure the source-side app has the required permissions and consent in the source tenant, and the target-side app has the required permissions and consent in the target tenant.
+
 ## .env configuration
 
 The repo includes:
@@ -46,6 +53,12 @@ The repo includes:
 
 Supported `.env` keys include:
 
+- `SOURCE_TENANT_ID`
+- `SOURCE_CLIENT_ID`
+- `SOURCE_CERTIFICATE_THUMBPRINT`
+- `TARGET_TENANT_ID`
+- `TARGET_CLIENT_ID`
+- `TARGET_CERTIFICATE_THUMBPRINT`
 - `TENANT_ID`
 - `CLIENT_ID`
 - `CERTIFICATE_THUMBPRINT`
@@ -66,12 +79,24 @@ Supported `.env` keys include:
 
 Boolean values accept `true`/`false`, `yes`/`no`, `1`/`0`, and similar forms. Multi-value include or exclude paths should be separated with `;`. If `SOURCE_FOLDER_PATH` is omitted, the script defaults the source root to `\`.
 
+Auth fallback behavior:
+
+- If `SOURCE_TENANT_ID`, `SOURCE_CLIENT_ID`, or `SOURCE_CERTIFICATE_THUMBPRINT` are omitted, the script falls back to `TENANT_ID`, `CLIENT_ID`, and `CERTIFICATE_THUMBPRINT` for source-side Graph calls.
+- If `TARGET_TENANT_ID`, `TARGET_CLIENT_ID`, or `TARGET_CERTIFICATE_THUMBPRINT` are omitted, the script falls back to `TENANT_ID`, `CLIENT_ID`, and `CERTIFICATE_THUMBPRINT` for target-side Graph calls.
+- That means existing same-tenant configurations continue to work unchanged.
+
 ## Command-line parameters
 
 - `-SourceUserPrincipalName <string>`: Required unless provided in `.env`. Source mailbox user principal name.
 - `-TargetUserPrincipalName <string>`: Required unless provided in `.env`. Target mailbox user principal name.
 - `-SourceFolderPath <string>`: Optional. Source mailbox folder path to copy. Defaults to `\`.
 - `-TargetFolderPath <string>`: Optional. Target mailbox folder path. Defaults to an empty string.
+- `-SourceTenantId <string>`: Optional. Source Microsoft Entra tenant ID. Falls back to `-TenantId`.
+- `-SourceClientId <string>`: Optional. Source app registration client ID. Falls back to `-ClientId`.
+- `-SourceCertificateThumbprint <string>`: Optional. Source certificate thumbprint. Falls back to `-CertificateThumbprint`.
+- `-TargetTenantId <string>`: Optional. Target Microsoft Entra tenant ID. Falls back to `-TenantId`.
+- `-TargetClientId <string>`: Optional. Target app registration client ID. Falls back to `-ClientId`.
+- `-TargetCertificateThumbprint <string>`: Optional. Target certificate thumbprint. Falls back to `-CertificateThumbprint`.
 - `-TenantId <string>`: Required unless provided in `.env`. Microsoft Entra tenant ID.
 - `-ClientId <string>`: Required unless provided in `.env`. App registration client ID.
 - `-CertificateThumbprint <string>`: Required unless provided in `.env`. Certificate thumbprint looked up in `Cert:\CurrentUser\My`.
@@ -95,11 +120,47 @@ Use a different file at runtime if needed:
   -SourceUserPrincipalName 'source@contoso.com' `
   -TargetUserPrincipalName 'target@contoso.com' `
   -SourceFolderPath 'Inbox' `
-  -PreflightOnly `
-  -Force
+  -PreflightOnly
 ```
 
 To run without any `.env` file at all, pass `-EnvFile ''` and provide the required auth settings on the command line.
+
+Example command-line-only cross-tenant run with `.env` disabled:
+
+```powershell
+.\Copy-GraphMailboxItems.ps1 `
+  -EnvFile '' `
+  -SourceUserPrincipalName 'alex@sourcecontoso.com' `
+  -TargetUserPrincipalName 'alex@targetfabrikam.com' `
+  -SourceFolderPath 'Inbox\Projects\FY26' `
+  -TargetFolderPath 'Inbox\Migration' `
+  -SourceTenantId '11111111-1111-1111-1111-111111111111' `
+  -SourceClientId '22222222-2222-2222-2222-222222222222' `
+  -SourceCertificateThumbprint 'SOURCECERTTHUMBPRINT' `
+  -TargetTenantId '33333333-3333-3333-3333-333333333333' `
+  -TargetClientId '44444444-4444-4444-4444-444444444444' `
+  -TargetCertificateThumbprint 'TARGETCERTTHUMBPRINT' `
+  -Force
+```
+
+## Cross-tenant example
+
+Copy from one tenant to another by providing separate source and target auth settings:
+
+```powershell
+.\Copy-GraphMailboxItems.ps1 `
+  -SourceUserPrincipalName 'alex@sourcecontoso.com' `
+  -TargetUserPrincipalName 'alex@targetfabrikam.com' `
+  -SourceFolderPath 'Inbox\Projects\FY26' `
+  -TargetFolderPath 'Inbox\Migration' `
+  -SourceTenantId '11111111-1111-1111-1111-111111111111' `
+  -SourceClientId '22222222-2222-2222-2222-222222222222' `
+  -SourceCertificateThumbprint 'SOURCECERTTHUMBPRINT' `
+  -TargetTenantId '33333333-3333-3333-3333-333333333333' `
+  -TargetClientId '44444444-4444-4444-4444-444444444444' `
+  -TargetCertificateThumbprint 'TARGETCERTTHUMBPRINT' `
+  -PreflightOnly
+```
 
 ## Example
 
