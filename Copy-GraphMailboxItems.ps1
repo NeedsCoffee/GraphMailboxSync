@@ -804,10 +804,30 @@ function Get-GraphAccessToken {
         [string]$CertificateThumbprint
     )
 
+    (Get-GraphAccessTokenRecord `
+        -TenantId $TenantId `
+        -ClientId $ClientId `
+        -CertificateThumbprint $CertificateThumbprint
+    ).AccessToken
+}
+
+function Get-GraphAccessTokenRecord {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TenantId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ClientId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CertificateThumbprint
+    )
+
     $certificate = Get-ClientCertificate -Thumbprint $CertificateThumbprint
     $clientAssertion = New-ClientAssertionJwt -TenantId $TenantId -ClientId $ClientId -Certificate $certificate
     $tokenEndpoint = "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token"
 
+    $issuedAtUtc = [DateTimeOffset]::UtcNow
     $tokenResponse = Invoke-RestMethod -Method Post -Uri $tokenEndpoint -ContentType 'application/x-www-form-urlencoded' -Body @{
         client_id = $ClientId
         scope = 'https://graph.microsoft.com/.default'
@@ -820,19 +840,118 @@ function Get-GraphAccessToken {
         throw 'Access token request did not return an access_token value.'
     }
 
-    return $tokenResponse.access_token
+    $expiresInSeconds = 3600
+    if ($tokenResponse.PSObject.Properties['expires_in']) {
+        [void][int]::TryParse([string]$tokenResponse.expires_in, [ref]$expiresInSeconds)
+    }
+
+    [pscustomobject]@{
+        AccessToken  = [string]$tokenResponse.access_token
+        ExpiresAtUtc = $issuedAtUtc.AddSeconds($expiresInSeconds)
+    }
+}
+
+function New-GraphAuthenticationContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TenantId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ClientId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CertificateThumbprint
+    )
+
+    [pscustomobject]@{
+        TenantId               = $TenantId
+        ClientId               = $ClientId
+        CertificateThumbprint  = $CertificateThumbprint
+        AccessToken            = $null
+        ExpiresAtUtc           = [DateTimeOffset]::MinValue
+    }
+}
+
+function Test-IsGraphAuthenticationContext {
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return $false
+    }
+
+    foreach ($propertyName in @('TenantId', 'ClientId', 'CertificateThumbprint', 'AccessToken', 'ExpiresAtUtc')) {
+        if (-not $Value.PSObject.Properties[$propertyName]) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Resolve-GraphAccessToken {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$AccessToken,
+
+        [switch]$ForceRefresh
+    )
+
+    if (-not (Test-IsGraphAuthenticationContext -Value $AccessToken)) {
+        return [string]$AccessToken
+    }
+
+    $refreshThresholdUtc = [DateTimeOffset]::UtcNow.AddMinutes(5)
+    if (
+        -not $ForceRefresh -and
+        -not [string]::IsNullOrWhiteSpace([string]$AccessToken.AccessToken) -and
+        $null -ne $AccessToken.ExpiresAtUtc -and
+        ([DateTimeOffset]$AccessToken.ExpiresAtUtc) -gt $refreshThresholdUtc
+    ) {
+        return [string]$AccessToken.AccessToken
+    }
+
+    Write-Verbose "Refreshing Microsoft Graph access token for client '$($AccessToken.ClientId)' in tenant '$($AccessToken.TenantId)'."
+    $tokenRecord = Get-GraphAccessTokenRecord `
+        -TenantId $AccessToken.TenantId `
+        -ClientId $AccessToken.ClientId `
+        -CertificateThumbprint $AccessToken.CertificateThumbprint
+
+    $AccessToken.AccessToken = $tokenRecord.AccessToken
+    $AccessToken.ExpiresAtUtc = $tokenRecord.ExpiresAtUtc
+    [string]$AccessToken.AccessToken
+}
+
+function Get-HttpStatusCodeFromException {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Exception]$Exception
+    )
+
+    if ($Exception.PSObject.Properties['Response'] -and $null -ne $Exception.Response) {
+        $statusCodeProperty = $Exception.Response.PSObject.Properties['StatusCode']
+        if ($statusCodeProperty -and $null -ne $statusCodeProperty.Value) {
+            return [int]$statusCodeProperty.Value
+        }
+    }
+
+    return $null
 }
 
 function Invoke-GraphApiRequest {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$Uri,
 
         [ValidateSet('GET', 'POST', 'PATCH', 'DELETE')]
         [string]$Method = 'GET',
+
+        [hashtable]$Headers,
 
         $Body
     )
@@ -844,36 +963,59 @@ function Invoke-GraphApiRequest {
         "https://graph.microsoft.com$Uri"
     }
 
-    $invokeParams = @{
-        Method  = $Method
-        Uri     = $resolvedUri
-        Headers = @{
-            Authorization = "Bearer $AccessToken"
+    $attemptCount = 0
+    while ($true) {
+        $attemptCount++
+        $resolvedAccessToken = Resolve-GraphAccessToken -AccessToken $AccessToken -ForceRefresh:($attemptCount -gt 1)
+        $invokeParams = @{
+            Method  = $Method
+            Uri     = $resolvedUri
+            Headers = @{
+                Authorization = "Bearer $resolvedAccessToken"
+            }
+        }
+
+        if ($Headers) {
+            foreach ($headerKey in $Headers.Keys) {
+                $invokeParams.Headers[$headerKey] = $Headers[$headerKey]
+            }
+        }
+
+        if ($null -ne $Body) {
+            $invokeParams.ContentType = 'application/json'
+            $invokeParams.Body = $Body | ConvertTo-Json -Depth 10 -Compress
+        }
+
+        try {
+            return Invoke-RestMethod @invokeParams
+        }
+        catch {
+            $statusCode = Get-HttpStatusCodeFromException -Exception $_.Exception
+            if ($attemptCount -ge 2 -or $statusCode -ne 401 -or -not (Test-IsGraphAuthenticationContext -Value $AccessToken)) {
+                throw
+            }
+
+            Write-Verbose "Microsoft Graph request returned 401 for '$resolvedUri'. Refreshing the token and retrying once."
         }
     }
-
-    if ($null -ne $Body) {
-        $invokeParams.ContentType = 'application/json'
-        $invokeParams.Body = $Body | ConvertTo-Json -Depth 10 -Compress
-    }
-
-    Invoke-RestMethod @invokeParams
 }
 
 function Invoke-GraphCollectionRequest {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
-        [string]$Uri
+        [string]$Uri,
+
+        [hashtable]$Headers
     )
 
     $items = [System.Collections.Generic.List[object]]::new()
     $nextUri = $Uri
 
     while ($nextUri) {
-        $response = Invoke-GraphApiRequest -AccessToken $AccessToken -Uri $nextUri
+        $response = Invoke-GraphApiRequest -AccessToken $AccessToken -Uri $nextUri -Headers $Headers
         if ($response.value) {
             foreach ($item in $response.value) {
                 $items.Add($item)
@@ -893,7 +1035,7 @@ function Invoke-GraphCollectionRequest {
 function Get-ExchangeSettings {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$UserPrincipalName
@@ -906,7 +1048,7 @@ function Get-ExchangeSettings {
 function Resolve-MailboxId {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$UserPrincipalName
@@ -924,7 +1066,7 @@ function Resolve-MailboxId {
 function Get-MailboxFolderTree {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$MailboxId
@@ -1554,7 +1696,7 @@ function Ensure-MailboxFolderPath {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$MailboxId,
@@ -1565,7 +1707,9 @@ function Ensure-MailboxFolderPath {
         [Parameter(Mandatory = $true)]
         [string]$Path,
 
-        [switch]$CreateIfMissing = $true,
+        [switch]$CreateIfMissing,
+
+        [switch]$SimulateIfMissing,
 
         [string]$DefaultFolderType = 'IPF.Note'
     )
@@ -1576,6 +1720,7 @@ function Ensure-MailboxFolderPath {
     }
 
     $currentFolder = $ParentFolder
+    $resolvedParentPath = if ($null -eq $ParentFolder) { '\' } else { [string]$ParentFolder.displayName }
     foreach ($segment in $segments) {
         $siblingFolders = if ($null -eq $currentFolder) {
             Invoke-GraphCollectionRequest -AccessToken $AccessToken -Uri "/beta/admin/exchange/mailboxes/$([Uri]::EscapeDataString($MailboxId))/folders"
@@ -1599,21 +1744,32 @@ function Ensure-MailboxFolderPath {
         }
 
         if (-not $CreateIfMissing) {
-            if ($PSCmdlet.ShouldProcess($Path, "Create missing folder path segment '$segment'")) {
-                $currentFolder = Ensure-MailboxFolder -AccessToken $AccessToken -MailboxId $MailboxId -ParentFolder $currentFolder -DisplayName $segment -FolderType $DefaultFolderType
-            }
-            else {
+            if ($SimulateIfMissing) {
                 $currentFolder = [pscustomobject]@{
-                    id          = '$whatif'
+                    id          = '$simulated'
                     displayName = $segment
                     type        = $DefaultFolderType
                 }
+                $resolvedParentPath = if ($resolvedParentPath -eq '\') {
+                    $segment
+                }
+                else {
+                    "$resolvedParentPath\$segment"
+                }
+
+                continue
             }
 
-            continue
+            throw "Folder path '$Path' does not exist because segment '$segment' was not found under '$resolvedParentPath'."
         }
 
         $currentFolder = Ensure-MailboxFolder -AccessToken $AccessToken -MailboxId $MailboxId -ParentFolder $currentFolder -DisplayName $segment -FolderType $DefaultFolderType
+        $resolvedParentPath = if ($resolvedParentPath -eq '\') {
+            $segment
+        }
+        else {
+            "$resolvedParentPath\$segment"
+        }
     }
 
     return $currentFolder
@@ -1623,7 +1779,7 @@ function Ensure-MailboxFolder {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$MailboxId,
@@ -1694,7 +1850,7 @@ function Ensure-MailboxFolder {
 function Get-MailboxItems {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$MailboxId,
@@ -1724,10 +1880,101 @@ function Get-MailboxItems {
     )
 }
 
+function Get-MailboxItemCount {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$AccessToken,
+
+        [Parameter(Mandatory = $true)]
+        [string]$MailboxId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FolderId,
+
+        [AllowNull()]
+        [object]$DateFilter
+    )
+
+    $encodedMailboxId = [Uri]::EscapeDataString($MailboxId)
+    $encodedFolderId = [Uri]::EscapeDataString($FolderId)
+    $queryParameters = @(
+        '$top=1',
+        '$count=true'
+    )
+
+    if ($DateFilter -and $DateFilter.FilterText) {
+        $queryParameters += '$filter={0}' -f [Uri]::EscapeDataString($DateFilter.FilterText)
+    }
+
+    $queryString = $queryParameters -join '&'
+    $response = Invoke-GraphApiRequest `
+        -AccessToken $AccessToken `
+        -Uri "/beta/admin/exchange/mailboxes/$encodedMailboxId/folders/$encodedFolderId/items?$queryString" `
+        -Headers @{ 'ConsistencyLevel' = 'eventual' }
+
+    $countProperty = $response.PSObject.Properties['@odata.count']
+    if (-not $countProperty) {
+        throw 'The Microsoft Graph response did not include @odata.count.'
+    }
+
+    [int]$countProperty.Value
+}
+
+function Get-EstimatedMailboxItemCount {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$AccessToken,
+
+        [Parameter(Mandatory = $true)]
+        [string]$MailboxId,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$FolderTree,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$FolderSelectionPlan,
+
+        [AllowNull()]
+        [object]$DateFilter
+    )
+
+    $selectedFolders = @(
+        $FolderTree.AllFolders |
+        Where-Object { $_.PSObject.Properties['id'] -and $FolderSelectionPlan.SelectedFolderIds.ContainsKey($_.id) }
+    )
+
+    if ($selectedFolders.Count -eq 0) {
+        return 0
+    }
+
+    $estimatedItemCount = 0
+    $processedFolderCount = 0
+    foreach ($selectedFolder in $selectedFolders) {
+        $processedFolderCount++
+        $folderPath = Get-MailboxFolderDisplayPath -FolderTree $FolderTree -FolderId $selectedFolder.id
+        Write-Progress `
+            -Id 4 `
+            -Activity 'Estimating filtered mailbox items' `
+            -Status $folderPath `
+            -PercentComplete (($processedFolderCount / [Math]::Max($selectedFolders.Count, 1)) * 100)
+
+        try {
+            $estimatedItemCount += Get-MailboxItemCount -AccessToken $AccessToken -MailboxId $MailboxId -FolderId $selectedFolder.id -DateFilter $DateFilter
+        }
+        catch {
+            Write-Verbose "Server-side count was not available for '$folderPath'. Falling back to enumerating item IDs. $($_.Exception.Message)"
+            $estimatedItemCount += @(Get-MailboxItems -AccessToken $AccessToken -MailboxId $MailboxId -FolderId $selectedFolder.id -DateFilter $DateFilter).Count
+        }
+    }
+
+    Write-Progress -Id 4 -Activity 'Estimating filtered mailbox items' -Completed
+    return $estimatedItemCount
+}
+
 function Export-MailboxItems {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$MailboxId,
@@ -1747,7 +1994,7 @@ function Export-MailboxItems {
 function Get-ImportSession {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
+        [object]$AccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$MailboxId,
@@ -1792,12 +2039,13 @@ function Import-MailboxItem {
 }
 
 function Copy-MailboxFolderItems {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SourceAccessToken,
+        [object]$SourceAccessToken,
 
         [Parameter(Mandatory = $true)]
-        [string]$TargetAccessToken,
+        [object]$TargetAccessToken,
 
         [Parameter(Mandatory = $true)]
         [string]$SourceMailboxId,
@@ -1904,7 +2152,6 @@ function Copy-MailboxFolderItems {
         $targetFolder = if ($folderMap.ContainsKey($sourceFolder.id)) { $folderMap[$sourceFolder.id] } else { $null }
         $processedFolderCount++
         $sourceFolderPath = Get-MailboxFolderDisplayPath -FolderTree $SourceFolderTree -FolderId $sourceFolder.id
-        $estimatedItemsInFolder = if ($null -ne $sourceFolder.totalItemCount) { [int]$sourceFolder.totalItemCount } else { 0 }
         $isSelectedFolder = $FolderSelectionPlan.SelectedFolderIds.ContainsKey($sourceFolder.id)
 
         Write-Host ("[{0}/{1}] Processing folder: {2}" -f $processedFolderCount, $totalFolders, $sourceFolderPath)
@@ -2010,12 +2257,12 @@ function Copy-MailboxFolderItems {
     Write-Host ("Finished. Processed {0} folder(s) and imported {1} item(s)." -f $processedFolderCount, $copiedItemCount)
 }
 
-$sourceAccessToken = Get-GraphAccessToken `
+$sourceAccessToken = New-GraphAuthenticationContext `
     -TenantId $sourceAuthenticationSettings.Tenant.Value `
     -ClientId $sourceAuthenticationSettings.Client.Value `
     -CertificateThumbprint $sourceAuthenticationSettings.Certificate.Value
 
-$targetAccessToken = Get-GraphAccessToken `
+$targetAccessToken = New-GraphAuthenticationContext `
     -TenantId $targetAuthenticationSettings.Tenant.Value `
     -ClientId $targetAuthenticationSettings.Client.Value `
     -CertificateThumbprint $targetAuthenticationSettings.Certificate.Value
@@ -2054,10 +2301,22 @@ $estimatedTraversedFolders = @(
     $sourceFolderTree.AllFolders |
     Where-Object { $_.PSObject.Properties['id'] -and $folderSelectionPlan.TraversalFolderIds.ContainsKey($_.id) }
 ).Count
-$estimatedItems = (@(
-    $sourceFolderTree.AllFolders |
-    Where-Object { $_.PSObject.Properties['id'] -and $folderSelectionPlan.SelectedFolderIds.ContainsKey($_.id) }
-) | Measure-Object -Property totalItemCount -Sum).Sum
+$estimatedItems = if ($PreflightOnly) {
+    Write-Verbose 'PreflightOnly is enabled, so estimating items by enumerating the selected source folders with the active filters.'
+    Get-EstimatedMailboxItemCount `
+        -AccessToken $sourceAccessToken `
+        -MailboxId $sourceMailboxId `
+        -FolderTree $sourceFolderTree `
+        -FolderSelectionPlan $folderSelectionPlan `
+        -DateFilter $itemDateFilter
+}
+else {
+    (@(
+        $sourceFolderTree.AllFolders |
+        Where-Object { $_.PSObject.Properties['id'] -and $folderSelectionPlan.SelectedFolderIds.ContainsKey($_.id) }
+    ) | Measure-Object -Property totalItemCount -Sum).Sum
+}
+
 if ($null -eq $estimatedItems) {
     $estimatedItems = 0
 }
@@ -2104,7 +2363,12 @@ else {
             -ParentFolder $null `
             -Path $TargetFolderPath `
             -ContextDescription "the requested target folder path '$TargetFolderPath'"
-        Ensure-MailboxFolderPath -AccessToken $targetAccessToken -MailboxId $targetMailboxId -Path $TargetFolderPath -CreateIfMissing:$false
+        Ensure-MailboxFolderPath `
+            -AccessToken $targetAccessToken `
+            -MailboxId $targetMailboxId `
+            -Path $TargetFolderPath `
+            -CreateIfMissing:(-not $PreflightOnly) `
+            -SimulateIfMissing:$PreflightOnly
     }
 }
 
