@@ -275,67 +275,67 @@ foreach ($boundParameterName in $PSBoundParameters.Keys) {
 }
 
 Set-ValueFromDotEnv -ParameterName 'SourceUserPrincipalName' -DotEnvKeys @('SOURCE_USER_PRINCIPAL_NAME') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'TargetUserPrincipalName' -DotEnvKeys @('TARGET_USER_PRINCIPAL_NAME') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'SourceFolderPath' -DotEnvKeys @('SOURCE_FOLDER_PATH') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'TargetFolderPath' -DotEnvKeys @('TARGET_FOLDER_PATH') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'SourceTenantId' -DotEnvKeys @('SOURCE_TENANT_ID') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'SourceClientId' -DotEnvKeys @('SOURCE_CLIENT_ID') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'SourceCertificateThumbprint' -DotEnvKeys @('SOURCE_CERTIFICATE_THUMBPRINT') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'TargetTenantId' -DotEnvKeys @('TARGET_TENANT_ID') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'TargetClientId' -DotEnvKeys @('TARGET_CLIENT_ID') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'TargetCertificateThumbprint' -DotEnvKeys @('TARGET_CERTIFICATE_THUMBPRINT') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'TenantId' -DotEnvKeys @('TENANT_ID') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'ClientId' -DotEnvKeys @('CLIENT_ID') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'CertificateThumbprint' -DotEnvKeys @('CERTIFICATE_THUMBPRINT') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
@@ -355,22 +355,22 @@ Set-ValueFromDotEnv -ParameterName 'CopyEmptyFolders' -DotEnvKeys @('COPY_EMPTY_
 }
 
 Set-ValueFromDotEnv -ParameterName 'IncludeFolderPath' -DotEnvKeys @('INCLUDE_FOLDER_PATH') -Transform {
-    param($value, $key)
+    param($value)
     ConvertTo-DotEnvArray -Value $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'ExcludeFolderPath' -DotEnvKeys @('EXCLUDE_FOLDER_PATH') -Transform {
-    param($value, $key)
+    param($value)
     ConvertTo-DotEnvArray -Value $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'Oldest' -DotEnvKeys @('OLDEST') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
 Set-ValueFromDotEnv -ParameterName 'Newest' -DotEnvKeys @('NEWEST') -Transform {
-    param($value, $key)
+    param($value)
     $value
 }
 
@@ -517,6 +517,15 @@ function New-MailboxItemDateFilter {
     }
 }
 
+function Write-StatusMessage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Information -MessageData $Message -InformationAction Continue
+}
+
 function Get-ExecutionModeSummary {
     param(
         [Parameter(Mandatory = $true)]
@@ -625,21 +634,21 @@ function Confirm-PlannedOperation {
         'default'
     }
 
-    Write-Host 'Planned operation:'
-    Write-Host ("  Source mailbox : {0} [{1}]" -f $SourceUserPrincipalName, $sourceMailboxSource)
-    Write-Host ("  Target mailbox : {0} [{1}]" -f $TargetUserPrincipalName, $targetMailboxSource)
-    Write-Host ("  Source path    : {0} [{1}]" -f $SourceFolderPath, $sourcePathSource)
-    Write-Host ("  Target         : {0} [{1}]" -f $ResolvedTargetDescription, $targetPathSource)
-    Write-Host ("  Source tenant  : {0} [{1}]" -f $SourceAuthenticationSettings.Tenant.Value, $SourceAuthenticationSettings.Tenant.Source)
-    Write-Host ("  Source client  : {0} [{1}]" -f $SourceAuthenticationSettings.Client.Value, $SourceAuthenticationSettings.Client.Source)
-    Write-Host ("  Source cert    : {0} [{1}]" -f $SourceAuthenticationSettings.Certificate.Value, $SourceAuthenticationSettings.Certificate.Source)
-    Write-Host ("  Target tenant  : {0} [{1}]" -f $TargetAuthenticationSettings.Tenant.Value, $TargetAuthenticationSettings.Tenant.Source)
-    Write-Host ("  Target client  : {0} [{1}]" -f $TargetAuthenticationSettings.Client.Value, $TargetAuthenticationSettings.Client.Source)
-    Write-Host ("  Target cert    : {0} [{1}]" -f $TargetAuthenticationSettings.Certificate.Value, $TargetAuthenticationSettings.Certificate.Source)
-    Write-Host ("  Mode           : {0} [{1}]" -f $Mode, $modeSource)
-    Write-Host ("  Copy empty     : {0} [{1}]" -f ($(if ($CopyEmptyFolders) { 'Yes' } else { 'No' })), $copyEmptySource)
-    Write-Host ("  Est. folders   : {0} selected, {1} traversed" -f $EstimatedSelectedFolderCount, $EstimatedTraversedFolderCount)
-    Write-Host ("  Est. items     : {0}" -f $EstimatedItemCount)
+    Write-StatusMessage -Message 'Planned operation:'
+    Write-StatusMessage -Message ("  Source mailbox : {0} [{1}]" -f $SourceUserPrincipalName, $sourceMailboxSource)
+    Write-StatusMessage -Message ("  Target mailbox : {0} [{1}]" -f $TargetUserPrincipalName, $targetMailboxSource)
+    Write-StatusMessage -Message ("  Source path    : {0} [{1}]" -f $SourceFolderPath, $sourcePathSource)
+    Write-StatusMessage -Message ("  Target         : {0} [{1}]" -f $ResolvedTargetDescription, $targetPathSource)
+    Write-StatusMessage -Message ("  Source tenant  : {0} [{1}]" -f $SourceAuthenticationSettings.Tenant.Value, $SourceAuthenticationSettings.Tenant.Source)
+    Write-StatusMessage -Message ("  Source client  : {0} [{1}]" -f $SourceAuthenticationSettings.Client.Value, $SourceAuthenticationSettings.Client.Source)
+    Write-StatusMessage -Message ("  Source cert    : {0} [{1}]" -f $SourceAuthenticationSettings.Certificate.Value, $SourceAuthenticationSettings.Certificate.Source)
+    Write-StatusMessage -Message ("  Target tenant  : {0} [{1}]" -f $TargetAuthenticationSettings.Tenant.Value, $TargetAuthenticationSettings.Tenant.Source)
+    Write-StatusMessage -Message ("  Target client  : {0} [{1}]" -f $TargetAuthenticationSettings.Client.Value, $TargetAuthenticationSettings.Client.Source)
+    Write-StatusMessage -Message ("  Target cert    : {0} [{1}]" -f $TargetAuthenticationSettings.Certificate.Value, $TargetAuthenticationSettings.Certificate.Source)
+    Write-StatusMessage -Message ("  Mode           : {0} [{1}]" -f $Mode, $modeSource)
+    Write-StatusMessage -Message ("  Copy empty     : {0} [{1}]" -f ($(if ($CopyEmptyFolders) { 'Yes' } else { 'No' })), $copyEmptySource)
+    Write-StatusMessage -Message ("  Est. folders   : {0} selected, {1} traversed" -f $EstimatedSelectedFolderCount, $EstimatedTraversedFolderCount)
+    Write-StatusMessage -Message ("  Est. items     : {0}" -f $EstimatedItemCount)
 
     if ($DateFilter) {
         $dateFilterSource = if ($SettingSources.ContainsKey('Oldest') -or $SettingSources.ContainsKey('Newest')) {
@@ -654,24 +663,24 @@ function Confirm-PlannedOperation {
             'default'
         }
 
-        Write-Host ("  Date filter    : {0} [{1}]" -f $DateFilter.FilterText, $dateFilterSource)
+        Write-StatusMessage -Message ("  Date filter    : {0} [{1}]" -f $DateFilter.FilterText, $dateFilterSource)
     }
     else {
-        Write-Host '  Date filter    : None [default]'
+        Write-StatusMessage -Message '  Date filter    : None [default]'
     }
 
     if ($IncludeFolderPath) {
-        Write-Host ("  Include paths  : {0} [{1}]" -f (($IncludeFolderPath | ForEach-Object { Normalize-FolderPath -Path $_ }) -join ', '), (Get-SettingSourceLabel -Map $SettingSources -Name 'IncludeFolderPath'))
+        Write-StatusMessage -Message ("  Include paths  : {0} [{1}]" -f (($IncludeFolderPath | ForEach-Object { Format-FolderPath -Path $_ }) -join ', '), (Get-SettingSourceLabel -Map $SettingSources -Name 'IncludeFolderPath'))
     }
     elseif ($ExcludeFolderPath) {
-        Write-Host ("  Exclude paths  : {0} [{1}]" -f (($ExcludeFolderPath | ForEach-Object { Normalize-FolderPath -Path $_ }) -join ', '), (Get-SettingSourceLabel -Map $SettingSources -Name 'ExcludeFolderPath'))
+        Write-StatusMessage -Message ("  Exclude paths  : {0} [{1}]" -f (($ExcludeFolderPath | ForEach-Object { Format-FolderPath -Path $_ }) -join ', '), (Get-SettingSourceLabel -Map $SettingSources -Name 'ExcludeFolderPath'))
     }
     else {
-        Write-Host '  Folder filter  : None [default]'
+        Write-StatusMessage -Message '  Folder filter  : None [default]'
     }
 
-    Write-Host ("  WhatIf         : {0} [{1}]" -f ($(if ($WhatIfMode) { 'Yes' } else { 'No' })), 'command line/session')
-    Write-Host ("  Preflight only : {0} [{1}]" -f ($(if ($PreflightOnly) { 'Yes' } else { 'No' })), (Get-SettingSourceLabel -Map $SettingSources -Name 'PreflightOnly'))
+    Write-StatusMessage -Message ("  WhatIf         : {0} [{1}]" -f ($(if ($WhatIfMode) { 'Yes' } else { 'No' })), 'command line/session')
+    Write-StatusMessage -Message ("  Preflight only : {0} [{1}]" -f ($(if ($PreflightOnly) { 'Yes' } else { 'No' })), (Get-SettingSourceLabel -Map $SettingSources -Name 'PreflightOnly'))
 
     if ($Force) {
         Write-Verbose 'Skipping confirmation because Force was specified.'
@@ -1189,7 +1198,7 @@ function Get-MailboxFolderDisplayPath {
     return ($segments -join '\')
 }
 
-function Normalize-FolderPath {
+function Format-FolderPath {
     param(
         [AllowNull()]
         [string]$Path
@@ -1212,8 +1221,8 @@ function Get-RelativeFolderPath {
         [string]$RootPath
     )
 
-    $normalizedFullPath = Normalize-FolderPath -Path $FullPath
-    $normalizedRootPath = Normalize-FolderPath -Path $RootPath
+    $normalizedFullPath = Format-FolderPath -Path $FullPath
+    $normalizedRootPath = Format-FolderPath -Path $RootPath
 
     if ([string]::IsNullOrWhiteSpace($normalizedRootPath)) {
         return $normalizedFullPath
@@ -1243,11 +1252,11 @@ function Test-FolderPathMatch {
         [string[]]$CandidatePaths
     )
 
-    $normalizedRelativePath = Normalize-FolderPath -Path $FolderRelativePath
-    $normalizedFullPath = Normalize-FolderPath -Path $FolderFullPath
+    $normalizedRelativePath = Format-FolderPath -Path $FolderRelativePath
+    $normalizedFullPath = Format-FolderPath -Path $FolderFullPath
 
     foreach ($candidatePath in $CandidatePaths) {
-        $normalizedCandidate = Normalize-FolderPath -Path $candidatePath
+        $normalizedCandidate = Format-FolderPath -Path $candidatePath
         if ($normalizedCandidate -eq '') {
             return $true
         }
@@ -1692,7 +1701,7 @@ function New-FolderSelectionPlan {
     }
 }
 
-function Ensure-MailboxFolderPath {
+function Add-MailboxFolderPath {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
@@ -1763,7 +1772,7 @@ function Ensure-MailboxFolderPath {
             throw "Folder path '$Path' does not exist because segment '$segment' was not found under '$resolvedParentPath'."
         }
 
-        $currentFolder = Ensure-MailboxFolder -AccessToken $AccessToken -MailboxId $MailboxId -ParentFolder $currentFolder -DisplayName $segment -FolderType $DefaultFolderType
+        $currentFolder = Add-MailboxFolder -AccessToken $AccessToken -MailboxId $MailboxId -ParentFolder $currentFolder -DisplayName $segment -FolderType $DefaultFolderType
         $resolvedParentPath = if ($resolvedParentPath -eq '\') {
             $segment
         }
@@ -1775,7 +1784,7 @@ function Ensure-MailboxFolderPath {
     return $currentFolder
 }
 
-function Ensure-MailboxFolder {
+function Add-MailboxFolder {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory = $true)]
@@ -2127,7 +2136,7 @@ function Copy-MailboxFolderItems {
     else {
         $sourceRootFolderType = if ([string]::IsNullOrWhiteSpace($SourceRootFolder.type)) { 'IPF.Note' } else { [string]$SourceRootFolder.type }
         $rootDisplayName = if ([string]::IsNullOrWhiteSpace($RootTargetDisplayNameOverride)) { $SourceRootFolder.displayName } else { $RootTargetDisplayNameOverride }
-        Ensure-MailboxFolder -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ParentFolder $TargetParentFolder -DisplayName $rootDisplayName -FolderType $sourceRootFolderType
+        Add-MailboxFolder -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ParentFolder $TargetParentFolder -DisplayName $rootDisplayName -FolderType $sourceRootFolderType
     }
 
     if ($null -eq $rootTargetFolder -and $WhatIfPreference -and -not ($OverlayMode -and $SourceRootFolder.id -eq '$root')) {
@@ -2154,16 +2163,16 @@ function Copy-MailboxFolderItems {
         $sourceFolderPath = Get-MailboxFolderDisplayPath -FolderTree $SourceFolderTree -FolderId $sourceFolder.id
         $isSelectedFolder = $FolderSelectionPlan.SelectedFolderIds.ContainsKey($sourceFolder.id)
 
-        Write-Host ("[{0}/{1}] Processing folder: {2}" -f $processedFolderCount, $totalFolders, $sourceFolderPath)
+        Write-StatusMessage -Message ("[{0}/{1}] Processing folder: {2}" -f $processedFolderCount, $totalFolders, $sourceFolderPath)
         Write-Progress -Id 1 -Activity 'Copying mailbox folders' -Status $sourceFolderPath -PercentComplete (($processedFolderCount / [Math]::Max($totalFolders, 1)) * 100)
 
         if ($sourceFolder.id -eq '$root') {
             $items = @()
-            Write-Host '  Root mailbox container selected; processing child folders only.'
+            Write-StatusMessage -Message '  Root mailbox container selected; processing child folders only.'
         }
         elseif (-not $isSelectedFolder) {
             $items = @()
-            Write-Host '  Folder skipped for item copy; evaluating descendants only.'
+            Write-StatusMessage -Message '  Folder skipped for item copy; evaluating descendants only.'
         }
         else {
             Write-Verbose "Enumerating items in source folder '$($sourceFolder.displayName)' ($($sourceFolder.id))."
@@ -2176,7 +2185,7 @@ function Copy-MailboxFolderItems {
             Write-Verbose "Found $itemCount item(s) in '$($sourceFolder.displayName)'."
         }
         elseif ($sourceFolder.id -ne '$root') {
-            Write-Host "  No items found in this folder."
+            Write-StatusMessage -Message '  No items found in this folder.'
         }
 
         $childFolders = if ($sourceFolder.id -eq '$root') {
@@ -2195,7 +2204,7 @@ function Copy-MailboxFolderItems {
                 $parentSourceFolderId = if ($sourceFolder.parentFolderId) { $sourceFolder.parentFolderId } else { '$root' }
                 $targetParentForCurrent = if ($folderMap.ContainsKey($parentSourceFolderId)) { $folderMap[$parentSourceFolderId] } else { $rootTargetFolder }
                 $currentFolderType = if ([string]::IsNullOrWhiteSpace($sourceFolder.type)) { 'IPF.Note' } else { [string]$sourceFolder.type }
-                $targetFolder = Ensure-MailboxFolder -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ParentFolder $targetParentForCurrent -DisplayName $sourceFolder.displayName -FolderType $currentFolderType
+                $targetFolder = Add-MailboxFolder -AccessToken $TargetAccessToken -MailboxId $TargetMailboxId -ParentFolder $targetParentForCurrent -DisplayName $sourceFolder.displayName -FolderType $currentFolderType
                 $folderMap[$sourceFolder.id] = $targetFolder
             }
         }
@@ -2210,7 +2219,7 @@ function Copy-MailboxFolderItems {
                 continue
             }
 
-            Write-Host ("  Batch {0}-{1} of {2} item(s) in folder" -f ($chunkStart + 1), $chunkEnd, $itemCount)
+            Write-StatusMessage -Message ("  Batch {0}-{1} of {2} item(s) in folder" -f ($chunkStart + 1), $chunkEnd, $itemCount)
             Write-Progress -Id 2 -ParentId 1 -Activity 'Copying items in current folder' -Status "$sourceFolderPath ($chunkEnd of $itemCount)" -PercentComplete (($chunkEnd / [Math]::Max($itemCount, 1)) * 100)
 
             if (-not $targetFolder) {
@@ -2232,7 +2241,7 @@ function Copy-MailboxFolderItems {
                     $copiedItemCount++
                 }
 
-                Write-Host ("    Imported {0} item(s) this batch. Running total: {1}" -f $itemIds.Count, $copiedItemCount)
+                Write-StatusMessage -Message ("    Imported {0} item(s) this batch. Running total: {1}" -f $itemIds.Count, $copiedItemCount)
                 if ($totalEstimatedItems -gt 0) {
                     Write-Progress -Id 3 -Activity 'Overall item progress' -Status "$copiedItemCount of estimated $totalEstimatedItems item(s) imported" -PercentComplete (($copiedItemCount / $totalEstimatedItems) * 100)
                 }
@@ -2240,7 +2249,7 @@ function Copy-MailboxFolderItems {
         }
 
         if ($itemCount -gt 0) {
-            Write-Host ("  Completed folder: imported {0} of {1} discovered item(s)." -f $folderImportedCount, $itemCount)
+            Write-StatusMessage -Message ("  Completed folder: imported {0} of {1} discovered item(s)." -f $folderImportedCount, $itemCount)
         }
 
         Write-Progress -Id 2 -ParentId 1 -Activity 'Copying items in current folder' -Completed
@@ -2254,7 +2263,7 @@ function Copy-MailboxFolderItems {
         }
     }
 
-    Write-Host ("Finished. Processed {0} folder(s) and imported {1} item(s)." -f $processedFolderCount, $copiedItemCount)
+    Write-StatusMessage -Message ("Finished. Processed {0} folder(s) and imported {1} item(s)." -f $processedFolderCount, $copiedItemCount)
 }
 
 $sourceAccessToken = New-GraphAuthenticationContext `
@@ -2339,7 +2348,7 @@ if ($sourceSpecialFolderDescriptor) {
         $targetParentFolder = $targetPrimarySpecialFolder
     }
     else {
-        $specialTargetName = Normalize-FolderPath -Path $TargetFolderPath
+        $specialTargetName = Format-FolderPath -Path $TargetFolderPath
         if ([string]::IsNullOrWhiteSpace($specialTargetName)) {
             $specialTargetName = $sourceRootFolder.displayName
         }
@@ -2363,7 +2372,7 @@ else {
             -ParentFolder $null `
             -Path $TargetFolderPath `
             -ContextDescription "the requested target folder path '$TargetFolderPath'"
-        Ensure-MailboxFolderPath `
+        Add-MailboxFolderPath `
             -AccessToken $targetAccessToken `
             -MailboxId $targetMailboxId `
             -Path $TargetFolderPath `
@@ -2435,7 +2444,7 @@ Assert-CopyTargetPreflight `
     -RootTargetDisplayNameOverride $rootTargetDisplayNameOverride
 
 if ($PreflightOnly) {
-    Write-Host 'Preflight completed successfully. No copy was performed because PreflightOnly was specified.'
+    Write-StatusMessage -Message 'Preflight completed successfully. No copy was performed because PreflightOnly was specified.'
     return
 }
 
